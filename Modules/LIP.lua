@@ -34,6 +34,7 @@ function LIP.load(fileName)
 	local data = {};
 	local section;
 	for line in file:lines() do
+        line = line:gsub("[\r\n]", "")  -- get rid of line ends on all platforms
 		local tempSection = line:match('^%[([^%[%]]+)%]$');
 		if(tempSection)then
 			section = tonumber(tempSection) and tonumber(tempSection) or tempSection;

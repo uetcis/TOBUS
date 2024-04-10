@@ -1,11 +1,35 @@
- --http library import
- xml2lua = require("xml2lua")
- handler = require("xmlhandler.tree")
- socket = require "socket"
- http = require "socket.http"
- LIP = require("LIP")
+if PLANE_ICAO == "A319" or PLANE_ICAO == "A20N" or PLANE_ICAO == "A321"  or PLANE_ICAO == "A346"
+then
 
-function openDoorsForBoarding()
+local VERSION = "1.4-2-hotbso"
+logMsg("TOBUS " .. VERSION .. " startup")
+
+ --http library import
+local xml2lua = require("xml2lua")
+local handler = require("xmlhandler.tree")
+local socket = require "socket"
+local http = require "socket.http"
+local LIP = require("LIP")
+
+local wait_until_speak = 0
+local speak_string
+
+local intendedPassengerNumber
+local intended_no_pax_set = false
+
+local tls_no_pax        -- dataref_table
+local MAX_PAX_NUMBER = 224
+
+local SETTINGS_FILENAME = "/tobus/tobus_settings.ini"
+local SIMBRIEF_FLIGHTPLAN_FILENAME = "simbrief.xml"
+local SIMBRIEF_ACCOUNT_NAME = ""
+local RANDOMIZE_SIMBRIEF_PASSENGER_NUMBER = false
+local USE_SECOND_DOOR = false
+local CLOSE_DOORS = true
+local LEAVE_DOOR1_OPEN = true
+local SIMBRIEF_FLIGHTPLAN = {}
+
+local function openDoorsForBoarding()
     passengerDoorArray[0] = 2
     if USE_SECOND_DOOR then
         if PLANE_ICAO == "A319" or PLANE_ICAO == "A20N" then
@@ -19,22 +43,27 @@ function openDoorsForBoarding()
     cargoDoorArray[1] = 2
 end
 
-function closeDoorsAfterBoarding()
-    passengerDoorArray[0] = 0
+local function closeDoorsAfterBoarding()
+    if not CLOSE_DOORS then return end
+
+    if not LEAVE_DOOR1_OPEN then
+        passengerDoorArray[0] = 0
+    end
+
     if USE_SECOND_DOOR then
         if PLANE_ICAO == "A319" or PLANE_ICAO == "A20N" then
             passengerDoorArray[2] = 0
         end
-        
+
         if PLANE_ICAO == "A321" or PLANE_ICAO == "A346" then
             passengerDoorArray[6] = 0
-        end      
+        end
     end
     cargoDoorArray[0] = 0
     cargoDoorArray[1] = 0
 end
 
-function setDefaultBoardingState()
+local function setDefaultBoardingState()
     set("AirbusFBW/NoPax", 0)
     set("AirbusFBW/PaxDistrib", math.random(35, 60) / 100)
     passengersBoarded = 0
@@ -43,31 +72,39 @@ function setDefaultBoardingState()
     boardingActive = true
 end
 
-function playChimeSound() 
+local function playChimeSound(boarding)
     command_once( "AirbusFBW/CheckCabin" )
+    if boarding then
+        speak_string = "Boarding Completed"
+    else
+        speak_string = "Deboarding Completed"
+    end
+
+    wait_until_speak = os.time() + 0.5
+    intended_no_pax_set = false
 end
 
-function boardInstantly() 
+local function boardInstantly()
     set("AirbusFBW/NoPax", intendedPassengerNumber)
     passengersBoarded = intendedPassengerNumber
     boardingActive = false
     boardingCompleted = true
-    playChimeSound()
+    playChimeSound(true)
     command_once("AirbusFBW/SetWeightAndCG")
     closeDoorsAfterBoarding()
 end
 
-function deboardInstantly() 
+local function deboardInstantly()
     set("AirbusFBW/NoPax", 0)
     deboardingActive = false
     deboardingCompleted = true
-    playChimeSound()
+    playChimeSound(false)
     command_once("AirbusFBW/SetWeightAndCG")
     closeDoorsAfterBoarding()
 end
 
-function setRandomNumberOfPassengers()
-    passengerDistributionGroup = math.random(0, 100)
+local function setRandomNumberOfPassengers()
+    local passengerDistributionGroup = math.random(0, 100)
 
     if passengerDistributionGroup < 2 then
         intendedPassengerNumber = math.random(math.floor(MAX_PAX_NUMBER * 0.22), math.floor(MAX_PAX_NUMBER * 0.54))
@@ -87,7 +124,7 @@ function setRandomNumberOfPassengers()
     intendedPassengerNumber = math.random(math.floor(MAX_PAX_NUMBER * 0.87), MAX_PAX_NUMBER)
 end
 
-function startBoardingOrDeboarding() 
+local function startBoardingOrDeboarding()
     boardingPaused = false
     boardingActive = false
     boardingCompleted = false
@@ -95,7 +132,7 @@ function startBoardingOrDeboarding()
     deboardingPaused = false
 end
 
-function resetAllParameters()
+local function resetAllParameters()
     passengersBoarded = 0
     intendedPassengerNumber = math.floor(MAX_PAX_NUMBER * 0.66)
     boardingActive = false
@@ -115,111 +152,126 @@ function resetAllParameters()
     isSettingsWindowDisplayed = false
 end
 
-function boardPassengers()
-    if boardingActive == false then
-        return
+-- frame loop, efficient coding please
+function tobusBoarding()
+    local now = os.time()
+
+    if speak_string and now > wait_until_speak then
+      XPLMSpeakString(speak_string)
+      speak_string = nil
     end
 
-    if passengersBoarded <= intendedPassengerNumber 
-     and (os.time() - lastTimeBoardingCheck) > math.random(secondsPerPassenger - 2, secondsPerPassenger + 3) then
-        passengersBoarded = passengersBoarded + 1
-        set("AirbusFBW/NoPax", passengersBoarded)
-        command_once("AirbusFBW/SetWeightAndCG")
-        lastTimeBoardingCheck = os.time()
-    end
-
-    if passengersBoarded == intendedPassengerNumber and boardingCompleted == false then
-        boardingCompleted = true
-        boardingActive = false
-        closeDoorsAfterBoarding()
-        if isTobusWindowDisplayed == false then
-            buildTobusWindow()
+    if boardingActive then
+        if passengersBoarded <= intendedPassengerNumber
+         and (now - lastTimeBoardingCheck) > math.random(secondsPerPassenger - 2, secondsPerPassenger + 2) then
+            passengersBoarded = passengersBoarded + 1
+            tls_no_pax[0] = passengersBoarded
+            command_once("AirbusFBW/SetWeightAndCG")
+            lastTimeBoardingCheck = os.time()
         end
-        playChimeSound()
+
+        if passengersBoarded == intendedPassengerNumber and not boardingCompleted then
+            boardingCompleted = true
+            boardingActive = false
+            closeDoorsAfterBoarding()
+            if not isTobusWindowDisplayed then
+                buildTobusWindow()
+            end
+            playChimeSound(true)
+        end
+
+    elseif deboardingActive then
+        if passengersBoarded >= 0
+         and (now - lastTimeBoardingCheck) > math.random(secondsPerPassenger - 2, secondsPerPassenger + 2) then
+            passengersBoarded = passengersBoarded - 1
+            tls_no_pax[0] = passengersBoarded
+            command_once("AirbusFBW/SetWeightAndCG")
+            lastTimeBoardingCheck = os.time()
+        end
+
+        if passengersBoarded == 0 and not deboardingCompleted then
+            deboardingCompleted = true
+            deboardingActive = false
+            closeDoorsAfterBoarding()
+            if isTobusWindowDisplayed == false then
+                buildTobusWindow()
+            end
+            playChimeSound(false)
+        end
     end
 end
 
-function deboardPassengers()
-    if deboardingActive == false then
-        return
-    end
+local function readSettings()
+    local f = io.open(SCRIPT_DIRECTORY..SETTINGS_FILENAME)
+    if f == nil then return end
 
-    if passengersBoarded >= 0 
-     and (os.time() - lastTimeBoardingCheck) > math.random((secondsPerPassenger - 2) * 0.6, (secondsPerPassenger + 3) * 0.6) then
-        passengersBoarded = passengersBoarded - 1
-        set("AirbusFBW/NoPax", passengersBoarded)
-        command_once("AirbusFBW/SetWeightAndCG")
-        lastTimeBoardingCheck = os.time()
-    end
+    f:close()
+    local settings = LIP.load(SCRIPT_DIRECTORY..SETTINGS_FILENAME)
 
-    if passengersBoarded == 0 and deboardingCompleted == false then
-        deboardingCompleted = true
-        deboardingActive = false
-        closeDoorsAfterBoarding()
-        if isTobusWindowDisplayed == false then
-            buildTobusWindow()
-        end
-        playChimeSound()
-    end
-end
+    settings.simbrief = settings.simbrief or {}    -- for backwards compatibility
+    settings.doors = settings.doors or {}
 
-function readSettings()
-    settings = LIP.load(SCRIPT_DIRECTORY..SETTINGS_FILENAME);
     if settings.simbrief.username ~= nil then
         SIMBRIEF_ACCOUNT_NAME = settings.simbrief.username
-        
-        if settings.simbrief.randomizePassengerNumber then
-            RANDOMIZE_SIMBRIEF_PASSENGER_NUMBER = true
-        end
     end
-    if settings.simbrief.useSecondDoor then
-        USE_SECOND_DOOR = true
-    end
+
+    RANDOMIZE_SIMBRIEF_PASSENGER_NUMBER = settings.simbrief.randomizePassengerNumber or
+                                                RANDOMIZE_SIMBRIEF_PASSENGER_NUMBER
+
+    USE_SECOND_DOOR = settings.doors.useSecondDoor or USE_SECOND_DOOR
+    CLOSE_DOORS = settings.doors.closeDoors or CLOSE_DOORS
+    LEAVE_DOOR1_OPEN = settings.doors.leaveDoor1Open or LEAVE_DOOR1_OPEN
+
 end
 
-function saveSettings()
-    newSettings = LIP.load(SCRIPT_DIRECTORY..SETTINGS_FILENAME);
+local function saveSettings()
+    local newSettings = {}
+    newSettings.simbrief = {}
     newSettings.simbrief.username = SIMBRIEF_ACCOUNT_NAME
     newSettings.simbrief.randomizePassengerNumber = RANDOMIZE_SIMBRIEF_PASSENGER_NUMBER
-    newSettings.simbrief.useSecondDoor = USE_SECOND_DOOR
+
+    newSettings.doors = {}
+    newSettings.doors.useSecondDoor = USE_SECOND_DOOR
+    newSettings.doors.closeDoors = CLOSE_DOORS
+    newSettings.doors.leaveDoor1Open = LEAVE_DOOR1_OPEN
     LIP.save(SCRIPT_DIRECTORY..SETTINGS_FILENAME, newSettings);
 end
 
-function fetchData()
+local function fetchData()
     if SIMBRIEF_ACCOUNT_NAME == nil then
       logMsg("No simbrief username has been configured")
       return false
     end
-  
+
     local response, statusCode = http.request("http://www.simbrief.com/api/xml.fetcher.php?username=" .. SIMBRIEF_ACCOUNT_NAME)
-  
+
     if statusCode ~= 200 then
       logMsg("Simbrief API is not responding")
       return false
     end
-  
+
     local f = io.open(SCRIPT_DIRECTORY..SIMBRIEF_FLIGHTPLAN_FILENAME, "w")
     f:write(response)
     f:close()
-  
+
     logMsg("Simbrief XML data downloaded")
     return true
 end
 
-function readXML()
+local function readXML()
     local xfile = xml2lua.loadFile(SCRIPT_DIRECTORY..SIMBRIEF_FLIGHTPLAN_FILENAME)
     local parser = xml2lua.parser(handler)
     parser:parse(xfile)
-  
+
     SIMBRIEF_FLIGHTPLAN["Status"] = handler.root.OFP.fetch.status
-  
+
     if SIMBRIEF_FLIGHTPLAN["Status"] ~= "Success" then
       logMsg("XML status is not success")
       return false
     end
 
-    intendedPassengerNumber = tonumber(handler.root.OFP.weights.pax_count)   
-    if RANDOMIZE_SIMBRIEF_PASSENGER_NUMBER then 
+    intendedPassengerNumber = tonumber(handler.root.OFP.weights.pax_count)
+    if RANDOMIZE_SIMBRIEF_PASSENGER_NUMBER then
 	    intendedPassengerNumber = math.random(math.floor(intendedPassengerNumber * 0.92), intendedPassengerNumber)
     end
 end
@@ -227,16 +279,9 @@ end
 
 -- init random and warm up
 math.randomseed(os.time())
-math.random() 
-math.random() 
 math.random()
-
-SETTINGS_FILENAME = "/tobus/tobus_settings.ini"
-SIMBRIEF_FLIGHTPLAN_FILENAME = "simbrief.xml"
-SIMBRIEF_ACCOUNT_NAME = ""
-RANDOMIZE_SIMBRIEF_PASSENGER_NUMBER = false
-USE_SECOND_DOOR = false
-SIMBRIEF_FLIGHTPLAN = {}
+math.random()
+math.random()
 
 
 if not SUPPORTS_FLOATING_WINDOWS then
@@ -245,12 +290,6 @@ if not SUPPORTS_FLOATING_WINDOWS then
     return
 end
 
-if PLANE_ICAO ~= "A319" and PLANE_ICAO ~= "A321" and PLANE_ICAO ~= "A20N" and PLANE_ICAO ~= "A346" then
-    logMsg(string.format("tolissBoarding.lua: not loading as Plane is not an airbus (%s).", PLANE_ICAO))
-    return
-end
-
-MAX_PAX_NUMBER = 224
 
 if PLANE_ICAO == "A319" then
     MAX_PAX_NUMBER = 145
@@ -273,21 +312,26 @@ if PLANE_ICAO == "A346" then
     MAX_PAX_NUMBER = 440
 end
 
-passengerDoorArray = create_dataref_table("AirbusFBW/PaxDoorModeArray", "FloatArray")
-cargoDoorArray = create_dataref_table("AirbusFBW/CargoDoorModeArray", "FloatArray")
 
 -- init gloabl variables
 readSettings()
-resetAllParameters()
+
+local function delayed_init()
+    if tls_no_pax ~= nil then return end
+    tls_no_pax = dataref_table("AirbusFBW/NoPax")
+    passengerDoorArray = dataref_table("AirbusFBW/PaxDoorModeArray")
+    cargoDoorArray = dataref_table("AirbusFBW/CargoDoorModeArray")
+    resetAllParameters()
+end
 
 function tobusOnBuild(tobus_window, x, y)
-    if boardingActive and boardingCompleted == false then
+    if boardingActive and not boardingCompleted then
         imgui.PushStyleColor(imgui.constant.Col.Text, 0xFF95FFF8)
         imgui.TextUnformatted(string.format("Boarding in progress %s / %s boarded", passengersBoarded, intendedPassengerNumber))
         imgui.PopStyleColor()
     end
 
-    if deboardingActive and deboardingCompleted == false then
+    if deboardingActive and not deboardingCompleted then
         imgui.PushStyleColor(imgui.constant.Col.Text, 0xFF95FFF8)
         imgui.TextUnformatted(string.format("Deboarding in progress %s / %s deboarded", passengersBoarded, intendedPassengerNumber))
         imgui.PopStyleColor()
@@ -305,28 +349,37 @@ function tobusOnBuild(tobus_window, x, y)
         imgui.PopStyleColor()
     end
 
-    if boardingActive == false and deboardingActive == false  then
-        local passengeraNumberChanged, newPassengerNumber 
+    if not (boardingActive or deboardingActive) then
+        local pn = tls_no_pax[0]
+        if not intended_no_pax_set or passengersBoarded ~= pn  then
+            intendedPassengerNumber = pn
+            passengersBoarded = pn
+        end
+
+        local passengeraNumberChanged, newPassengerNumber
         = imgui.SliderInt("Passengers number", intendedPassengerNumber, 0, MAX_PAX_NUMBER, "Value: %d")
 
         if passengeraNumberChanged then
             intendedPassengerNumber = newPassengerNumber
+            intended_no_pax_set = true
         end
         imgui.SameLine()
 
         if imgui.Button("Get from simbrief") then
             if fetchData() then
                 readXML()
+                intended_no_pax_set = true
             end
         end
-        
+
         if imgui.Button("Set random passenger number") then
             setRandomNumberOfPassengers()
+            intended_no_pax_set = true
         end
 
     end
 
-    if boardingActive == false and deboardingActive == false then
+    if not boardingActive and not deboardingActive then
         imgui.SameLine()
 
         if deboardingPaused == false then
@@ -338,7 +391,7 @@ function tobusOnBuild(tobus_window, x, y)
                 boardingActive = true
                 lastTimeBoardingCheck = os.time()
                 openDoorsForBoarding()
-                if boardingSpeedMode == 1 then 
+                if boardingSpeedMode == 1 then
                     boardInstantly()
                 end
             end
@@ -346,21 +399,21 @@ function tobusOnBuild(tobus_window, x, y)
 
         imgui.SameLine()
 
-        if boardingPaused == false then
+        if not boardingPaused then
             if imgui.Button("Start Deboarding") then
                 passengersBoarded = intendedPassengerNumber
                 startBoardingOrDeboarding()
                 deboardingActive = true
                 lastTimeBoardingCheck = os.time()
                 openDoorsForBoarding()
-                if boardingSpeedMode == 1 then 
+                if boardingSpeedMode == 1 then
                     deboardInstantly()
                 end
             end
         end
     end
 
-    if boardingActive then  
+    if boardingActive then
         imgui.SameLine()
         if imgui.Button("Pause Boarding") then
             boardingActive = false
@@ -375,7 +428,7 @@ function tobusOnBuild(tobus_window, x, y)
         end
     end
 
-    if deboardingActive then  
+    if deboardingActive then
         imgui.SameLine()
         if imgui.Button("Pause Deboarding") then
             deboardingActive = false
@@ -397,7 +450,7 @@ function tobusOnBuild(tobus_window, x, y)
         end
     end
 
-    if boardingActive == false and deboardingActive == false then
+    if not boardingActive and not deboardingActive then
         if imgui.RadioButton("Instant", boardingSpeedMode == 1) then
             boardingSpeedMode = 1
         end
@@ -407,10 +460,10 @@ function tobusOnBuild(tobus_window, x, y)
         else
             fastModeMinutes = math.floor((intendedPassengerNumber * 3) / 60)
         end
-        
+
         if fastModeMinutes ~= 0 then
             if imgui.RadioButton(
-                string.format("Fast (%s minutes)", fastModeMinutes), 
+                string.format("Fast (%s minutes)", fastModeMinutes),
                 boardingSpeedMode == 2) then
                 boardingSpeedMode = 2
                 if USE_SECOND_DOOR then
@@ -421,7 +474,7 @@ function tobusOnBuild(tobus_window, x, y)
             end
         else
             if imgui.RadioButton(
-                string.format("Fast (less than a minute)", fastModeMinutes), 
+                string.format("Fast (less than a minute)", fastModeMinutes),
                 boardingSpeedMode == 2) then
                 boardingSpeedMode = 2
                 if USE_SECOND_DOOR then
@@ -431,7 +484,7 @@ function tobusOnBuild(tobus_window, x, y)
                 end
             end
         end
-        
+
         if USE_SECOND_DOOR then
             realModeMinutes = math.floor((intendedPassengerNumber * 5) / 60)
         else
@@ -440,7 +493,7 @@ function tobusOnBuild(tobus_window, x, y)
 
         if realModeMinutes ~= 0 then
             if imgui.RadioButton(
-                string.format("Real (%s minutes)", realModeMinutes), 
+                string.format("Real (%s minutes)", realModeMinutes),
                 boardingSpeedMode == 3) then
                 boardingSpeedMode = 3
                 if USE_SECOND_DOOR then
@@ -451,7 +504,7 @@ function tobusOnBuild(tobus_window, x, y)
             end
         else
             if imgui.RadioButton(
-                string.format("Real (less than a minute)", realModeMinutes), 
+                string.format("Real (less than a minute)", realModeMinutes),
                 boardingSpeedMode == 3) then
                 boardingSpeedMode = 3
                 if USE_SECOND_DOOR then
@@ -463,29 +516,42 @@ function tobusOnBuild(tobus_window, x, y)
         end
     end
 
-    imgui.Separator() 
+    imgui.Separator()
 
     if imgui.TreeNode("Settings") then
-        local simbriefUsernameChanged, newText = imgui.InputText("Simbrief Username", SIMBRIEF_ACCOUNT_NAME, 255)
-
-        if simbriefUsernameChanged then
-            SIMBRIEF_ACCOUNT_NAME = newText
-        end
-    
-        local randomizeSimbriefPassengerChanged, newVal = imgui.Checkbox(
-            "Simulate some passengers not showing up after simbrief import", RANDOMIZE_SIMBRIEF_PASSENGER_NUMBER
-        )
-        if randomizeSimbriefPassengerChanged then
-            RANDOMIZE_SIMBRIEF_PASSENGER_NUMBER = newVal
+        local changed, newval
+        changed, newval = imgui.InputText("Simbrief Username", SIMBRIEF_ACCOUNT_NAME, 255)
+        if changed then
+            SIMBRIEF_ACCOUNT_NAME = newval
         end
 
-        local useSecondDoorChanged, newValue = imgui.Checkbox(
-            "Use front and back door for boarding and deboarding (only front door by default)", USE_SECOND_DOOR
-        )
-        if useSecondDoorChanged then
-            USE_SECOND_DOOR = newValue
+        changed, newval = imgui.Checkbox("Simulate some passengers not showing up after simbrief import",
+                                         RANDOMIZE_SIMBRIEF_PASSENGER_NUMBER)
+        if changed then
+            RANDOMIZE_SIMBRIEF_PASSENGER_NUMBER = newval
         end
-    
+
+        changed, newval = imgui.Checkbox(
+            "Use front and back door for boarding and deboarding (only front door by default)", USE_SECOND_DOOR)
+        if changed then
+            USE_SECOND_DOOR = newval
+            logMsg("USE_SECOND_DOOR set to " .. tostring(USE_SECOND_DOOR))
+        end
+
+        changed, newval = imgui.Checkbox(
+            "Close doors after boarding/deboading", CLOSE_DOORS)
+        if changed then
+            CLOSE_DOORS = newval
+            logMsg("CLOSE_DOORS set to " .. tostring(CLOSE_DOORS))
+        end
+
+        changed, newval = imgui.Checkbox(
+            "Leave door1 open after boarding/deboading", LEAVE_DOOR1_OPEN)
+        if changed then
+            LEAVE_DOOR1_OPEN = newval
+            logMsg("LEAVE_DOOR1_OPEN set to " .. tostring(LEAVE_DOOR1_OPEN))
+        end
+
         if imgui.Button("Save Settings") then
             saveSettings()
         end
@@ -493,20 +559,25 @@ function tobusOnBuild(tobus_window, x, y)
     end
 end
 
+local winCloseInProgess = false
+
 function tobusOnClose()
     isTobusWindowDisplayed = false
+    winCloseInProgess = false
 end
 
 function buildTobusWindow()
+    delayed_init()
+
     if (isTobusWindowDisplayed) then
         return
     end
-	tobus_window = float_wnd_create(900, 240, 1, true)
+	tobus_window = float_wnd_create(900, 280, 1, true)
 
     local leftCorner, height, width = XPLMGetScreenBoundsGlobal()
 
     float_wnd_set_position(tobus_window, width / 2 - 375, height / 2)
-	float_wnd_set_title(tobus_window, "TOBUS - Your Toliss Boarding Companion")
+	float_wnd_set_title(tobus_window, "TOBUS - Your Toliss Boarding Companion " .. VERSION)
 	float_wnd_set_imgui_builder(tobus_window, "tobusOnBuild")
     float_wnd_set_onclose(tobus_window, "tobusOnClose")
 
@@ -515,13 +586,19 @@ end
 
 function showTobusWindow()
     if isTobusWindowDisplayed then
+        if not winCloseInProgess then
+            winCloseInProgess = true
+            float_wnd_destroy(tobus_window) -- marks for destroy, destroy is async
+        end
         return
     end
+
     buildTobusWindow()
 end
 
 add_macro("TOBUS - Your Toliss Boarding Companion", "buildTobusWindow()")
 create_command("FlyWithLua/TOBUS/Toggle_tobus", "Show TOBUS window", "showTobusWindow()", "", "")
-do_often("boardPassengers()")
-do_often("deboardPassengers()")
+do_every_frame("tobusBoarding()")
 readSettings()
+
+end
