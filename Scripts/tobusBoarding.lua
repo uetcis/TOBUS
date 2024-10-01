@@ -137,9 +137,9 @@ local function resetAllParameters()
     intendedPassengerNumber = math.floor(MAX_PAX_NUMBER * 0.66)
     boardingActive = false
     deboardingActive = false
-    lastTimeBoardingCheck = os.time()
+    nextTimeBoardingCheck = os.time()
     boardingSpeedMode = 3
-    if (USE_SECOND_DOOR) then
+    if USE_SECOND_DOOR then
         secondsPerPassenger = 5
     else
         secondsPerPassenger = 9
@@ -162,12 +162,11 @@ function tobusBoarding()
     end
 
     if boardingActive then
-        if passengersBoarded <= intendedPassengerNumber
-         and (now - lastTimeBoardingCheck) > math.random(secondsPerPassenger - 2, secondsPerPassenger + 2) then
+        if passengersBoarded < intendedPassengerNumber and now > nextTimeBoardingCheck then
             passengersBoarded = passengersBoarded + 1
             tls_no_pax[0] = passengersBoarded
             command_once("AirbusFBW/SetWeightAndCG")
-            lastTimeBoardingCheck = os.time()
+            nextTimeBoardingCheck = os.time() + secondsPerPassenger + math.random(-2, 2)
         end
 
         if passengersBoarded == intendedPassengerNumber and not boardingCompleted then
@@ -181,19 +180,18 @@ function tobusBoarding()
         end
 
     elseif deboardingActive then
-        if passengersBoarded >= 0
-         and (now - lastTimeBoardingCheck) > math.random(secondsPerPassenger - 2, secondsPerPassenger + 2) then
+        if passengersBoarded > 0 and now >= nextTimeBoardingCheck then
             passengersBoarded = passengersBoarded - 1
             tls_no_pax[0] = passengersBoarded
             command_once("AirbusFBW/SetWeightAndCG")
-            lastTimeBoardingCheck = os.time()
+            nextTimeBoardingCheck = os.time() + secondsPerPassenger + math.random(-2, 2)
         end
 
         if passengersBoarded == 0 and not deboardingCompleted then
             deboardingCompleted = true
             deboardingActive = false
             closeDoorsAfterBoarding()
-            if isTobusWindowDisplayed == false then
+            if not isTobusWindowDisplayed then
                 buildTobusWindow()
             end
             playChimeSound(false)
@@ -293,25 +291,20 @@ end
 
 if PLANE_ICAO == "A319" then
     MAX_PAX_NUMBER = 145
-end
-
-if PLANE_ICAO == "A321" then
-    DataRef("a321EngineType", "AirbusFBW/EngineTypeIndex")
-    if (a321EngineType == 0 or a321EngineType == 1) then
+elseif PLANE_ICAO == "A321" then
+    local a321EngineType = get("AirbusFBW/EngineTypeIndex")
+    if a321EngineType == 0 or a321EngineType == 1 then
         MAX_PAX_NUMBER = 220
     else
         MAX_PAX_NUMBER = 224
     end
-end
-
-if PLANE_ICAO == "A20N" then
+elseif PLANE_ICAO == "A20N" then
     MAX_PAX_NUMBER = 188
-end
-
-if PLANE_ICAO == "A346" then
+elseif PLANE_ICAO == "A346" then
     MAX_PAX_NUMBER = 440
 end
 
+logMsg(string.format("tobus: plane: %s, MAX_PAX_NUMBER: %d", PLANE_ICAO, MAX_PAX_NUMBER))
 
 -- init gloabl variables
 readSettings()
@@ -382,14 +375,14 @@ function tobusOnBuild(tobus_window, x, y)
     if not boardingActive and not deboardingActive then
         imgui.SameLine()
 
-        if deboardingPaused == false then
+        if not deboardingPaused then
             if imgui.Button("Start Boarding") then
                 set("AirbusFBW/NoPax", 0)
                 set("AirbusFBW/PaxDistrib", math.random(35, 60) / 100)
                 passengersBoarded = 0
                 startBoardingOrDeboarding()
                 boardingActive = true
-                lastTimeBoardingCheck = os.time()
+                nextTimeBoardingCheck = os.time()
                 openDoorsForBoarding()
                 if boardingSpeedMode == 1 then
                     boardInstantly()
@@ -406,7 +399,7 @@ function tobusOnBuild(tobus_window, x, y)
                 passengersBoarded = intendedPassengerNumber
                 startBoardingOrDeboarding()
                 deboardingActive = true
-                lastTimeBoardingCheck = os.time()
+                nextTimeBoardingCheck = os.time()
                 openDoorsForBoarding()
                 if boardingSpeedMode == 1 then
                     deboardInstantly()
