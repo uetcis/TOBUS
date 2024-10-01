@@ -1,7 +1,7 @@
 if PLANE_ICAO == "A319" or PLANE_ICAO == "A20N" or PLANE_ICAO == "A321"  or PLANE_ICAO == "A346"
 then
 
-local VERSION = "1.4-2-hotbso"
+local VERSION = "1.4-3-hotbso"
 logMsg("TOBUS " .. VERSION .. " startup")
 
  --http library import
@@ -393,6 +393,8 @@ function tobusOnBuild(tobus_window, x, y)
                 openDoorsForBoarding()
                 if boardingSpeedMode == 1 then
                     boardInstantly()
+                else
+                    logMsg(string.format("start boarding with %0.1f s/pax", secondsPerPassenger))
                 end
             end
         end
@@ -455,64 +457,41 @@ function tobusOnBuild(tobus_window, x, y)
             boardingSpeedMode = 1
         end
 
+        local fastModeMinutes, realModeMinutes, label, spp
         if USE_SECOND_DOOR then
-            fastModeMinutes = math.floor((intendedPassengerNumber * 2) / 60)
+            spp = 2
         else
-            fastModeMinutes = math.floor((intendedPassengerNumber * 3) / 60)
+            spp = 3
         end
 
+        fastModeMinutes = math.floor((intendedPassengerNumber * spp) / 60 + 0.5)
         if fastModeMinutes ~= 0 then
-            if imgui.RadioButton(
-                string.format("Fast (%s minutes)", fastModeMinutes),
-                boardingSpeedMode == 2) then
-                boardingSpeedMode = 2
-                if USE_SECOND_DOOR then
-                    secondsPerPassenger = 2
-                else
-                    secondsPerPassenger = 3
-                end
-            end
+            label = string.format("Fast (%d minutes)", fastModeMinutes)
         else
-            if imgui.RadioButton(
-                string.format("Fast (less than a minute)", fastModeMinutes),
-                boardingSpeedMode == 2) then
-                boardingSpeedMode = 2
-                if USE_SECOND_DOOR then
-                    secondsPerPassenger = 2
-                else
-                    secondsPerPassenger = 3
-                end
-            end
+            label = "Fast (less than a minute)"
+        end
+
+        if imgui.RadioButton(label,boardingSpeedMode == 2) then
+            boardingSpeedMode = 2
+            secondsPerPassenger = spp
         end
 
         if USE_SECOND_DOOR then
-            realModeMinutes = math.floor((intendedPassengerNumber * 5) / 60)
+            spp = 5
         else
-            realModeMinutes = math.floor((intendedPassengerNumber * 9) / 60)
+            spp = 9
         end
 
+        realModeMinutes = math.floor((intendedPassengerNumber * spp) / 60 + 0.5)
         if realModeMinutes ~= 0 then
-            if imgui.RadioButton(
-                string.format("Real (%s minutes)", realModeMinutes),
-                boardingSpeedMode == 3) then
-                boardingSpeedMode = 3
-                if USE_SECOND_DOOR then
-                    secondsPerPassenger = 5
-                else
-                    secondsPerPassenger = 9
-                end
-            end
+            label = string.format("Real (%d minutes)", realModeMinutes)
         else
-            if imgui.RadioButton(
-                string.format("Real (less than a minute)", realModeMinutes),
-                boardingSpeedMode == 3) then
-                boardingSpeedMode = 3
-                if USE_SECOND_DOOR then
-                    secondsPerPassenger = 5
-                else
-                    secondsPerPassenger = 9
-                end
-            end
+            label = "Real (less than a minute)"
+        end
+
+        if imgui.RadioButton(label, boardingSpeedMode == 3) then
+            boardingSpeedMode = 3
+            secondsPerPassenger = spp
         end
     end
 
