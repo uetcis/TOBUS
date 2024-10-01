@@ -458,6 +458,8 @@ function tobusOnBuild(tobus_window, x, y)
         end
 
         local fastModeMinutes, realModeMinutes, label, spp
+
+        -- fast mode
         if USE_SECOND_DOOR then
             spp = 2
         else
@@ -473,9 +475,13 @@ function tobusOnBuild(tobus_window, x, y)
 
         if imgui.RadioButton(label,boardingSpeedMode == 2) then
             boardingSpeedMode = 2
+        end
+
+        if boardingSpeedMode == 2 then  -- regardless whether the button was changed or not
             secondsPerPassenger = spp
         end
 
+        -- real mode
         if USE_SECOND_DOOR then
             spp = 5
         else
@@ -491,6 +497,9 @@ function tobusOnBuild(tobus_window, x, y)
 
         if imgui.RadioButton(label, boardingSpeedMode == 3) then
             boardingSpeedMode = 3
+        end
+
+        if boardingSpeedMode == 3 then
             secondsPerPassenger = spp
         end
     end
