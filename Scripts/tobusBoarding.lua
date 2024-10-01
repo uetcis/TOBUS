@@ -269,8 +269,12 @@ local function readXML()
     end
 
     intendedPassengerNumber = tonumber(handler.root.OFP.weights.pax_count)
+    logMsg(string.format("intendedPassengerNumber: %d", intendedPassengerNumber))
     if RANDOMIZE_SIMBRIEF_PASSENGER_NUMBER then
-	    intendedPassengerNumber = math.random(math.floor(intendedPassengerNumber * 0.92), intendedPassengerNumber)
+        local f = 0.01 * math.random(92, 103) -- lua 5.1: random take integer args!
+	    intendedPassengerNumber = math.floor(intendedPassengerNumber * f)
+        if intendedPassengerNumber > MAX_PAX_NUMBER then intendedPassengerNumber = MAX_PAX_NUMBER end
+        logMsg(string.format("randomized intendedPassengerNumber: %d", intendedPassengerNumber))
     end
 end
 
