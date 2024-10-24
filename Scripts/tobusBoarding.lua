@@ -1,7 +1,7 @@
-if PLANE_ICAO == "A319" or PLANE_ICAO == "A20N" or PLANE_ICAO == "A321"  or PLANE_ICAO == "A346"
+if PLANE_ICAO == "A319" or PLANE_ICAO == "A20N" or PLANE_ICAO == "A321" or PLANE_ICAO == "A346" or PLANE_ICAO == "A339"
 then
 
-local VERSION = "1.4-3-hotbso"
+local VERSION = "1.5-hotbso"
 logMsg("TOBUS " .. VERSION .. " startup")
 
  --http library import
@@ -29,10 +29,12 @@ local CLOSE_DOORS = true
 local LEAVE_DOOR1_OPEN = true
 local SIMBRIEF_FLIGHTPLAN = {}
 
+local jw1_connected = false     -- set if an opensam jw at the second door is detected
+
 local function openDoorsForBoarding()
     passengerDoorArray[0] = 2
-    if USE_SECOND_DOOR then
-        if PLANE_ICAO == "A319" or PLANE_ICAO == "A20N" then
+    if USE_SECOND_DOOR or jw1_connected then
+        if PLANE_ICAO == "A319" or PLANE_ICAO == "A20N" or PLANE_ICAO == "A339" then
             passengerDoorArray[2] = 2
         end
         if PLANE_ICAO == "A321" or PLANE_ICAO == "A346" then
@@ -50,12 +52,12 @@ local function closeDoorsAfterBoarding()
         passengerDoorArray[0] = 0
     end
 
-    if USE_SECOND_DOOR then
-        if PLANE_ICAO == "A319" or PLANE_ICAO == "A20N" then
+    if USE_SECOND_DOOR or jw1_connected then
+        if PLANE_ICAO == "A319" or PLANE_ICAO == "A20N" or PLANE_ICAO == "A339" then
             passengerDoorArray[2] = 0
         end
 
-        if PLANE_ICAO == "A321" or PLANE_ICAO == "A346" then
+        if PLANE_ICAO == "A321" or PLANE_ICAO == "A346" or PLANE_ICAO == "A339" then
             passengerDoorArray[6] = 0
         end
     end
@@ -144,6 +146,7 @@ local function resetAllParameters()
     else
         secondsPerPassenger = 9
     end
+    jw1_connected = false
     boardingPaused = false
     deboardingPaused = false
     deboardingCompleted = false
@@ -223,6 +226,7 @@ local function readSettings()
 end
 
 local function saveSettings()
+    logMsg("tobus: saveSettings...")
     local newSettings = {}
     newSettings.simbrief = {}
     newSettings.simbrief.username = SIMBRIEF_ACCOUNT_NAME
@@ -232,7 +236,8 @@ local function saveSettings()
     newSettings.doors.useSecondDoor = USE_SECOND_DOOR
     newSettings.doors.closeDoors = CLOSE_DOORS
     newSettings.doors.leaveDoor1Open = LEAVE_DOOR1_OPEN
-    LIP.save(SCRIPT_DIRECTORY..SETTINGS_FILENAME, newSettings);
+    LIP.save(SCRIPT_DIRECTORY..SETTINGS_FILENAME, newSettings)
+    logMsg("tobus: done")
 end
 
 local function fetchData()
@@ -304,6 +309,8 @@ elseif PLANE_ICAO == "A321" then
     end
 elseif PLANE_ICAO == "A20N" then
     MAX_PAX_NUMBER = 188
+elseif PLANE_ICAO == "A339" then
+    MAX_PAX_NUMBER = 375
 elseif PLANE_ICAO == "A346" then
     MAX_PAX_NUMBER = 440
 end
@@ -456,8 +463,17 @@ function tobusOnBuild(tobus_window, x, y)
 
         local fastModeMinutes, realModeMinutes, label, spp
 
+        jw1_connected = (get("opensam/jetway/door/status", 1) == 1)
+        if jw1_connected then
+            if not USE_SECOND_DOOR then
+                imgui.PushStyleColor(imgui.constant.Col.Text, 0xFF43B54B)
+                imgui.TextUnformatted("A second jetway is connected, using both doors")
+                imgui.PopStyleColor()
+            end
+        end
+
         -- fast mode
-        if USE_SECOND_DOOR then
+        if USE_SECOND_DOOR or jw1_connected then
             spp = 2
         else
             spp = 3
@@ -479,7 +495,7 @@ function tobusOnBuild(tobus_window, x, y)
         end
 
         -- real mode
-        if USE_SECOND_DOOR then
+        if USE_SECOND_DOOR or jw1_connected then
             spp = 5
         else
             spp = 9
