@@ -1,7 +1,7 @@
 if PLANE_ICAO == "A319" or PLANE_ICAO == "A20N" or PLANE_ICAO == "A321" or PLANE_ICAO == "A346" or PLANE_ICAO == "A339"
 then
 
-local VERSION = "1.5-hotbso"
+local VERSION = "1.51-hotbso"
 logMsg("TOBUS " .. VERSION .. " startup")
 
  --http library import
@@ -30,6 +30,10 @@ local LEAVE_DOOR1_OPEN = true
 local SIMBRIEF_FLIGHTPLAN = {}
 
 local jw1_connected = false     -- set if an opensam jw at the second door is detected
+local opensam_door_status = nil
+if nil ~= XPLMFindDataRef("opensam/jetway/door/status") then
+	opensam_door_status = dataref_table("opensam/jetway/door/status")
+end
 
 local function openDoorsForBoarding()
     passengerDoorArray[0] = 2
@@ -463,7 +467,7 @@ function tobusOnBuild(tobus_window, x, y)
 
         local fastModeMinutes, realModeMinutes, label, spp
 
-        jw1_connected = (get("opensam/jetway/door/status", 1) == 1)
+        jw1_connected = (opensam_door_status ~= nil and opensam_door_status[1] == 1)
         if jw1_connected then
             if not USE_SECOND_DOOR then
                 imgui.PushStyleColor(imgui.constant.Col.Text, 0xFF43B54B)
