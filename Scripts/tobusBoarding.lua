@@ -1,7 +1,8 @@
-if PLANE_ICAO == "A319" or PLANE_ICAO == "A20N" or PLANE_ICAO == "A321" or PLANE_ICAO == "A346" or PLANE_ICAO == "A339"
+if PLANE_ICAO == "A319" or PLANE_ICAO == "A20N" or PLANE_ICAO == "A321" or
+   PLANE_ICAO == "A21N" or PLANE_ICAO == "A346" or PLANE_ICAO == "A339"
 then
 
-local VERSION = "1.51-hotbso"
+local VERSION = "1.52-hotbso"
 logMsg("TOBUS " .. VERSION .. " startup")
 
  --http library import
