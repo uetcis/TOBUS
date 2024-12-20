@@ -1,3 +1,6 @@
+**This is a mod of TOBUS by @piotr-tomczyk whow is unreachable (for me) and seems to have other prorities now. I took the liberty to add some functionality and keep this tool alive.\
+All credits go to @piotr-tomczyk .**
+--------------------------------------------------------------------------------------------------------------------------------
 ​Hello Toliss simmers I think I have a real treat to you.
 I was always missing 1 thing when flying Toliss after ditching msfs and Fenix. It was a boarding process that it had on its EFB. 
 I'm glad to bring you the boarding functionality from the Fenix efb in the form of Lua script that is compatible with every Toliss  
