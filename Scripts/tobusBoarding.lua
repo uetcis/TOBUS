@@ -2,7 +2,7 @@ if PLANE_ICAO == "A319" or PLANE_ICAO == "A20N" or PLANE_ICAO == "A321" or
    PLANE_ICAO == "A21N" or PLANE_ICAO == "A346" or PLANE_ICAO == "A339"
 then
 
-local VERSION = "1.52-hotbso"
+local VERSION = "1.53-hotbso"
 logMsg("TOBUS " .. VERSION .. " startup")
 
  --http library import
@@ -42,7 +42,7 @@ local function openDoorsForBoarding()
         if PLANE_ICAO == "A319" or PLANE_ICAO == "A20N" or PLANE_ICAO == "A339" then
             passengerDoorArray[2] = 2
         end
-        if PLANE_ICAO == "A321" or PLANE_ICAO == "A346" then
+        if PLANE_ICAO == "A321" or PLANE_ICAO == "A21N" or PLANE_ICAO == "A346" then
             passengerDoorArray[6] = 2
         end
     end
@@ -62,7 +62,7 @@ local function closeDoorsAfterBoarding()
             passengerDoorArray[2] = 0
         end
 
-        if PLANE_ICAO == "A321" or PLANE_ICAO == "A346" or PLANE_ICAO == "A339" then
+        if PLANE_ICAO == "A321" or PLANE_ICAO == "A21N" or PLANE_ICAO == "A346" or PLANE_ICAO == "A339" then
             passengerDoorArray[6] = 0
         end
     end
@@ -147,9 +147,9 @@ local function resetAllParameters()
     nextTimeBoardingCheck = os.time()
     boardingSpeedMode = 3
     if USE_SECOND_DOOR then
-        secondsPerPassenger = 5
+        secondsPerPassenger = 4
     else
-        secondsPerPassenger = 9
+        secondsPerPassenger = 6
     end
     jw1_connected = false
     boardingPaused = false
@@ -289,12 +289,8 @@ local function readXML()
 end
 
 
--- init random and warm up
+-- init random
 math.randomseed(os.time())
-math.random()
-math.random()
-math.random()
-
 
 if not SUPPORTS_FLOATING_WINDOWS then
     -- to make sure the script doesn't stop old FlyWithLua versions
@@ -305,7 +301,7 @@ end
 
 if PLANE_ICAO == "A319" then
     MAX_PAX_NUMBER = 145
-elseif PLANE_ICAO == "A321" then
+elseif PLANE_ICAO == "A321" or PLANE_ICAO == "A21N" then
     local a321EngineType = get("AirbusFBW/EngineTypeIndex")
     if a321EngineType == 0 or a321EngineType == 1 then
         MAX_PAX_NUMBER = 220
@@ -501,9 +497,9 @@ function tobusOnBuild(tobus_window, x, y)
 
         -- real mode
         if USE_SECOND_DOOR or jw1_connected then
-            spp = 5
+            spp = 4
         else
-            spp = 9
+            spp = 6
         end
 
         realModeMinutes = math.floor((intendedPassengerNumber * spp) / 60 + 0.5)
