@@ -116,7 +116,7 @@ local function playChimeSound(boarding)
 end
 
 function prepareZFW()
-	for i=0,8 do
+	for i = 0, 8 do
 		fuel_bk[i] = fuel[i]
 		fuel[i] = 0
 	end
@@ -124,7 +124,9 @@ function prepareZFW()
 end
 
 function printLoadsheet()
-	if not waiting_zfw then return end
+	if not waiting_zfw then
+		return
+	end
 	local zfw = weight[0]
 	if last_zfw ~= zfw then
 		last_zfw = zfw
@@ -133,27 +135,63 @@ function printLoadsheet()
 	waiting_zfw = false
 	local zfw_cg = tonumber(cg[0])
 	local template = [[
-PAX %d 
-FWD CRG %d
-AFT CRG %d 
-ZFW %d
-ZFW CG %.1f
-FOB %d
-	]]
+```
+-------- LOADSHEET --------
+REG %s		OFP %s
+%s		%s
+PAX %d		FOB %d
+FWD %d		AFT %d
+ZFW %d		ZFWCG %.1f
+---------------------------
+CONFIRM LOADSHEET VIA ACARS
+BEFORE P/B. CPNY PROC APPLY
+```]]
+	--local template = "/data2/1590//R/REG%%20%s%%20OFP%%20%s%%20%s%s%%20/%%20%s%%20PAX%%20%d%%20FOB%%20%d%%20FWD%%20%d%%20AFT%%20%d%%20ZFW%%20%d%%20ZFWCG%%20%.1f"
+	-- local template = "/data2/1919//NE/LOADSHEET%%0AREG%%20@%s@%%20OFP%%20@%s@%%0A@%s%s@%%20@%s@%%0APAX%%20@%d@%%20FOB%%20@%d@%%0AFWD%%20@%d@%%20AFT%%20@%d@%%0AZFW%%20@%d@%%20ZFWCG%%20@%.1f@"
 	local total_fuel = 0
-	for i=0,8 do
+	for i = 0, 8 do
 		total_fuel = total_fuel + fuel_bk[i]
 		fuel[i] = fuel_bk[i]
 	end
-	
-	local msg = string.format(template, tls_no_pax[0], fwd_cargo[0], aft_cargo[0], zfw, zfw_cg, total_fuel)
-	
+
+	local cs = SIMBRIEF_FLIGHTPLAN["callsign"]
+	local reg = SIMBRIEF_FLIGHTPLAN["reg"]
+	local airline = SIMBRIEF_FLIGHTPLAN["airline"]
+	local fl_no = SIMBRIEF_FLIGHTPLAN["flight_number"]
+	local release = SIMBRIEF_FLIGHTPLAN["ofp_release"]
+	local date = SIMBRIEF_FLIGHTPLAN["date"]
+	local msg = string.format(
+		template,
+		reg,
+		release,
+		cs,
+		date,
+		tls_no_pax[0],
+		total_fuel,
+		fwd_cargo[0],
+		aft_cargo[0],
+		zfw,
+		zfw_cg
+	)
+
 	local f = io.open(SYSTEM_DIRECTORY .. "Output/loadsheet.txt", "w")
 	f:write(msg)
 	f:close()
-	
-    local cmd = "python Resources\\plugins\\FlyWithLua\\Scripts\\loadsheet.py"
-    local popen_fh = io.popen(cmd)
+	local cmd = "python Resources\\plugins\\FlyWithLua\\Scripts\\loadsheet.py"
+	io.popen(cmd)
+	--local url = "http://www.hoppie.nl/acars/system/connect.html?logon=YOUR_LOGON_CODE&from="
+	--	.. cs
+	--	.. "AOC"
+	--	.. "&to="
+	--	.. cs
+	--	.. "&type=cpdlc&packet="
+	--	.. msg
+	--local response, statusCode = http.request(url)
+
+	--if statusCode ~= 200 then
+	--	logMsg("TOBUS URL hoppie failed" .. response .. statusCode)
+	--end
+	--logMsg("TOBUS URL hoppie: " .. url)
 end
 
 local function boardInstantly()
@@ -331,7 +369,7 @@ local function fetchData()
 	f:close()
 
 	logMsg("Simbrief XML data downloaded")
-	
+
 	return true
 end
 
@@ -341,6 +379,12 @@ local function readXML()
 	parser:parse(xfile)
 
 	SIMBRIEF_FLIGHTPLAN["Status"] = handler.root.OFP.fetch.status
+	SIMBRIEF_FLIGHTPLAN["reg"] = handler.root.OFP.aircraft.reg
+	SIMBRIEF_FLIGHTPLAN["airline"] = handler.root.OFP.general.icao_airline
+	SIMBRIEF_FLIGHTPLAN["flight_number"] = handler.root.OFP.general.flight_number
+	SIMBRIEF_FLIGHTPLAN["callsign"] = handler.root.OFP.atc.callsign
+	SIMBRIEF_FLIGHTPLAN["ofp_release"] = handler.root.OFP.general.release
+	SIMBRIEF_FLIGHTPLAN["date"] = os.date("%Y/%m/%d", handler.root.OFP.times.sched_off)
 
 	if SIMBRIEF_FLIGHTPLAN["Status"] ~= "Success" then
 		logMsg("XML status is not success")
@@ -690,4 +734,3 @@ add_macro("TOBUS - Your Toliss Boarding Companion", "buildTobusWindow()")
 create_command("FlyWithLua/TOBUS/Toggle_tobus", "Show TOBUS window", "showTobusWindow()", "", "")
 do_every_frame("tobusBoarding()")
 readSettings()
-
