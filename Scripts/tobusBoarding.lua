@@ -41,6 +41,7 @@ local block_fuel
 local SETTINGS_FILENAME = "/tobus/tobus_settings.ini"
 local SIMBRIEF_FLIGHTPLAN_FILENAME = "simbrief.xml"
 local SIMBRIEF_ACCOUNT_NAME = ""
+local HOPPIE_LOGON_CODE = ""
 local RANDOMIZE_SIMBRIEF_PASSENGER_NUMBER = false
 local USE_SECOND_DOOR = false
 local CLOSE_DOORS = true
@@ -123,6 +124,18 @@ function prepareZFW()
 	waiting_zfw = true
 end
 
+function urlencode(str)
+	if not str then
+		return ""
+	end
+	-- Convert each non-allowed character to %XX hex code
+	str = string.gsub(str, "\n", "\r\n")
+	str = string.gsub(str, "([^A-Za-z0-9_%.~-])", function(char)
+		return string.format("%%%02X", string.byte(char))
+	end)
+	return str
+end
+
 function printLoadsheet()
 	if not waiting_zfw then
 		return
@@ -133,21 +146,23 @@ function printLoadsheet()
 		return
 	end
 	waiting_zfw = false
-	local zfw_cg = tonumber(cg[0])
-	local template = [[
-```
--------- LOADSHEET --------
+	local zfw_cg = cg[0]
+
+	-- upload loadsheet only when there's simbrief ofp downloaded
+	if SIMBRIEF_FLIGHTPLAN["Status"] ~= "Success" or HOPPIE_LOGON_CODE == "" then
+		return
+	end
+
+	local template = [[-------- LOADSHEET --------
 REG %s		OFP %s
 %s		%s
 PAX %d		FOB %d
 FWD %d		AFT %d
 ZFW %d		ZFWCG %.1f
 ---------------------------
-CONFIRM LOADSHEET VIA ACARS
-BEFORE P/B. CPNY PROC APPLY
-```]]
-	--local template = "/data2/1590//R/REG%%20%s%%20OFP%%20%s%%20%s%s%%20/%%20%s%%20PAX%%20%d%%20FOB%%20%d%%20FWD%%20%d%%20AFT%%20%d%%20ZFW%%20%d%%20ZFWCG%%20%.1f"
-	-- local template = "/data2/1919//NE/LOADSHEET%%0AREG%%20@%s@%%20OFP%%20@%s@%%0A@%s%s@%%20@%s@%%0APAX%%20@%d@%%20FOB%%20@%d@%%0AFWD%%20@%d@%%20AFT%%20@%d@%%0AZFW%%20@%d@%%20ZFWCG%%20@%.1f@"
+]]
+	local cpdlc_header = "/data2/1590//NE/"
+
 	local total_fuel = 0
 	for i = 0, 8 do
 		total_fuel = total_fuel + fuel_bk[i]
@@ -177,21 +192,24 @@ BEFORE P/B. CPNY PROC APPLY
 	local f = io.open(SYSTEM_DIRECTORY .. "Output/loadsheet.txt", "w")
 	f:write(msg)
 	f:close()
-	local cmd = "python Resources\\plugins\\FlyWithLua\\Scripts\\loadsheet.py"
-	io.popen(cmd)
-	--local url = "http://www.hoppie.nl/acars/system/connect.html?logon=YOUR_LOGON_CODE&from="
-	--	.. cs
-	--	.. "AOC"
-	--	.. "&to="
-	--	.. cs
-	--	.. "&type=cpdlc&packet="
-	--	.. msg
-	--local response, statusCode = http.request(url)
 
-	--if statusCode ~= 200 then
-	--	logMsg("TOBUS URL hoppie failed" .. response .. statusCode)
-	--end
-	--logMsg("TOBUS URL hoppie: " .. url)
+	-- run your custom command here to send it via telegram/discord/etc
+	-- local cmd = "python Resources\\plugins\\FlyWithLua\\Scripts\\loadsheet.py"
+	-- io.popen(cmd)
+
+	local url = "http://www.hoppie.nl/acars/system/connect.html?logon="
+		.. HOPPIE_LOGON_CODE
+		.. "&from="
+		.. cs
+		.. "&to="
+		.. cs
+		.. "&type=cpdlc&packet="
+		.. urlencode(cpdlc_header .. msg)
+	local response, statusCode = http.request(url)
+
+	if statusCode ~= 200 then
+		logMsg("TOBUS URL hoppie failed" .. response .. statusCode)
+	end
 end
 
 local function boardInstantly()
@@ -321,10 +339,15 @@ local function readSettings()
 	local settings = LIP.load(SCRIPT_DIRECTORY .. SETTINGS_FILENAME)
 
 	settings.simbrief = settings.simbrief or {} -- for backwards compatibility
+	settings.hoppie = settings.hoppie or {}
 	settings.doors = settings.doors or {}
 
 	if settings.simbrief.username ~= nil then
 		SIMBRIEF_ACCOUNT_NAME = settings.simbrief.username
+	end
+
+	if settings.hoppie.logon ~= nil then
+		HOPPIE_LOGON_CODE = settings.hoppie.logon
 	end
 
 	RANDOMIZE_SIMBRIEF_PASSENGER_NUMBER = settings.simbrief.randomizePassengerNumber
@@ -341,6 +364,9 @@ local function saveSettings()
 	newSettings.simbrief = {}
 	newSettings.simbrief.username = SIMBRIEF_ACCOUNT_NAME
 	newSettings.simbrief.randomizePassengerNumber = RANDOMIZE_SIMBRIEF_PASSENGER_NUMBER
+
+	newSettings.hoppie = {}
+	newSettings.hoppie.logon = HOPPIE_LOGON_CODE
 
 	newSettings.doors = {}
 	newSettings.doors.useSecondDoor = USE_SECOND_DOOR
@@ -655,6 +681,11 @@ function tobusOnBuild(tobus_window, x, y)
 		changed, newval = imgui.InputText("Simbrief Username", SIMBRIEF_ACCOUNT_NAME, 255)
 		if changed then
 			SIMBRIEF_ACCOUNT_NAME = newval
+		end
+
+		changed, newval = imgui.InputText("Hoppie Logon Code", HOPPIE_LOGON_CODE, 255)
+		if changed then
+			HOPPIE_LOGON_CODE = newval
 		end
 
 		changed, newval = imgui.Checkbox(
