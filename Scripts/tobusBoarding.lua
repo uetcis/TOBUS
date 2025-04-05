@@ -117,6 +117,12 @@ local function playChimeSound(boarding)
 end
 
 function prepareZFW()
+	-- prepare data for loadsheet only when there's simbrief ofp downloaded
+	-- AND logon code is present
+	if SIMBRIEF_FLIGHTPLAN["Status"] ~= "Success" or HOPPIE_LOGON_CODE == "" then
+		return
+	end
+
 	for i = 0, 8 do
 		fuel_bk[i] = fuel[i]
 		fuel[i] = 0
@@ -147,11 +153,6 @@ function printLoadsheet()
 	end
 	waiting_zfw = false
 	local zfw_cg = cg[0]
-
-	-- upload loadsheet only when there's simbrief ofp downloaded
-	if SIMBRIEF_FLIGHTPLAN["Status"] ~= "Success" or HOPPIE_LOGON_CODE == "" then
-		return
-	end
 
 	local template = [[-------- LOADSHEET --------
 REG %s		OFP %s
