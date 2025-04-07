@@ -34,9 +34,10 @@ local passengerDoorArray
 local cargoDoorArray
 local fwd_cargo
 local aft_cargo
-local zfw_cg
-local zfw
-local block_fuel
+local weight
+local cg
+local fuel
+local total_fuel
 
 local SETTINGS_FILENAME = "/tobus/tobus_settings.ini"
 local SIMBRIEF_FLIGHTPLAN_FILENAME = "simbrief.xml"
@@ -49,9 +50,9 @@ local LEAVE_DOOR1_OPEN = true
 local SIMBRIEF_FLIGHTPLAN = {}
 
 local waiting_zfw = false
+local recovering = false
 local fuel_bk = {}
-
-local last_zfw = 0
+local fuel_total_bk = 0
 
 local jw1_connected = false -- set if an opensam jw at the second door is detected
 local opensam_door_status = nil
@@ -116,7 +117,7 @@ local function playChimeSound(boarding)
 	intended_no_pax_set = false
 end
 
-function prepareZFW()
+local function prepareZFW()
 	-- prepare data for loadsheet only when there's simbrief ofp downloaded
 	-- AND logon code is present
 	if SIMBRIEF_FLIGHTPLAN["Status"] ~= "Success" or HOPPIE_LOGON_CODE == "" then
@@ -125,12 +126,14 @@ function prepareZFW()
 
 	for i = 0, 8 do
 		fuel_bk[i] = fuel[i]
-		fuel[i] = 0
 	end
+	fuel_total_bk = total_fuel[0]
+
+	-- this will trigger printLoadsheet()
 	waiting_zfw = true
 end
 
-function urlencode(str)
+local function urlencode(str)
 	if not str then
 		return ""
 	end
@@ -142,17 +145,46 @@ function urlencode(str)
 	return str
 end
 
-function printLoadsheet()
+local function recoverFuel()
+	if not recovering then
+		return
+	end
+
+	if total_fuel[0] == fuel_total_bk then
+		logMsg("TOBUS recovered fuel " .. fuel_total_bk)
+		recovering = false
+		return
+	end
+
+	logMsg("TOBUS recovering fuel to " .. fuel_total_bk .. " from " .. total_fuel[0])
+	for i = 0, 8 do
+		fuel[i] = fuel_bk[i]
+	end
+end
+
+local function printLoadsheet()
 	if not waiting_zfw then
 		return
 	end
-	local zfw = weight[0]
-	if last_zfw ~= zfw then
-		last_zfw = zfw
+
+	logMsg("TOBUS start getting zfw")
+	logMsg(string.format("total fuel bk %s, total fuel %s", fuel_total_bk, total_fuel[0]))
+	-- getting zfw by setting emptying the tanks
+	if total_fuel[0] ~= 0 then
+		for i = 0, 8 do
+			fuel[i] = 0
+		end
 		return
 	end
-	waiting_zfw = false
+
+	-- now we have zero fuel
+	local zfw = weight[0]
 	local zfw_cg = cg[0]
+	logMsg("TOBUS zfw zfwcg fetched" .. zfw .. " " .. zfw_cg)
+	waiting_zfw = false
+
+	-- start getting the fuel back
+	recovering = true
 
 	local template = [[-------- LOADSHEET --------
 REG %s		OFP %s
@@ -163,12 +195,6 @@ ZFW %d		ZFWCG %.1f
 ---------------------------
 ]]
 	local cpdlc_header = "/data2/1590//NE/"
-
-	local total_fuel = 0
-	for i = 0, 8 do
-		total_fuel = total_fuel + fuel_bk[i]
-		fuel[i] = fuel_bk[i]
-	end
 
 	local cs = SIMBRIEF_FLIGHTPLAN["callsign"]
 	local reg = SIMBRIEF_FLIGHTPLAN["reg"]
@@ -183,7 +209,9 @@ ZFW %d		ZFWCG %.1f
 		cs,
 		date,
 		tls_no_pax[0],
-		total_fuel,
+		-- using the saved fuel,
+		-- since it hasn't been recovered yet
+		fuel_total_bk,
 		fwd_cargo[0],
 		aft_cargo[0],
 		zfw,
@@ -292,6 +320,7 @@ function tobusBoarding()
 		speak_string = nil
 	end
 	printLoadsheet()
+	recoverFuel()
 	if boardingActive then
 		if passengersBoarded < intendedPassengerNumber and now > nextTimeBoardingCheck then
 			passengersBoarded = passengersBoarded + 1
@@ -472,7 +501,8 @@ local function delayed_init()
 	aft_cargo = dataref_table("AirbusFBW/AftCargo")
 	cg = dataref_table("AirbusFBW/CGLocationPercent")
 	weight = dataref_table("sim/flightmodel/weight/m_total")
-	fuel = dataref_table("toliss_airbus/fuelTankContent_kgs")
+	fuel = dataref_table("sim/flightmodel/weight/m_fuel")
+	total_fuel = dataref_table("sim/flightmodel/weight/m_fuel_total")
 
 	resetAllParameters()
 end
@@ -766,3 +796,4 @@ add_macro("TOBUS - Your Toliss Boarding Companion", "buildTobusWindow()")
 create_command("FlyWithLua/TOBUS/Toggle_tobus", "Show TOBUS window", "showTobusWindow()", "", "")
 do_every_frame("tobusBoarding()")
 readSettings()
+showTobusWindow()
